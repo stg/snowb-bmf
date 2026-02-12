@@ -20,6 +20,7 @@ export interface BMFontCommon extends Record<string, unknown> {
   scaleH: number
   pages: number
   packed: number
+  xFpBits?: number
   alphaChnl?: number // BMFont v3+ alpha channel info
   redChnl?: number // BMFont v3+ red channel info
   greenChnl?: number // BMFont v3+ green channel info
