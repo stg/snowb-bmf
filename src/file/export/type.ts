@@ -92,12 +92,44 @@ export type OutputExt = string
 
 export type OutputExts = OutputExt[]
 
-export type FontToContent = (fontInfo: BMFont) => string | Uint8Array
+export interface ExportOptions {
+  pixelFormat?: string
+  blur?: boolean
+}
+
+export type FontToContent = (
+  fontInfo: BMFont,
+  options?: ExportOptions,
+) => string | Uint8Array
+
+export interface ExportFile {
+  name: string
+  content: string | Uint8Array
+}
+
+export interface ExportContext {
+  project: import('src/store').Project
+  bmfont: BMFont
+  fontName: string
+  fileName: string
+  options?: ExportOptions
+}
+
+export interface ExportFilesResult {
+  files: ExportFile[]
+  includePng?: boolean
+}
+
+export type FontToFiles = (context: ExportContext) => ExportFilesResult
 
 export interface Output {
   type: OutputType
   exts: OutputExts
-  getContent: FontToContent
+  getContent?: FontToContent
+  getFiles?: FontToFiles
+  includePng?: boolean
+  supportsPixelFormat?: boolean
+  supportsBlur?: boolean
 }
 
 export interface ConfigItem extends Omit<Output, 'exts'> {
