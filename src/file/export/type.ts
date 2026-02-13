@@ -95,6 +95,8 @@ export type OutputExts = OutputExt[]
 export interface ExportOptions {
   pixelFormat?: string
   blur?: boolean
+  includeTextures?: boolean
+  extended?: boolean
 }
 
 export type FontToContent = (
@@ -130,6 +132,8 @@ export interface Output {
   includePng?: boolean
   supportsPixelFormat?: boolean
   supportsBlur?: boolean
+  supportsTextures?: boolean
+  supportsExtended?: boolean
 }
 
 export interface ConfigItem extends Omit<Output, 'exts'> {

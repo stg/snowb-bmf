@@ -17,6 +17,8 @@ list.forEach(
     includePng,
     supportsPixelFormat,
     supportsBlur,
+    supportsTextures,
+    supportsExtended,
   }) => {
     exts.forEach((ext) => {
       configList.push({
@@ -28,6 +30,8 @@ list.forEach(
         includePng,
         supportsPixelFormat,
         supportsBlur,
+        supportsTextures,
+        supportsExtended,
       })
     })
   },

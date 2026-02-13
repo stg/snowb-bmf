@@ -38,6 +38,8 @@ const ButtonExport: FunctionComponent<ButtonExportProps> = (
   const [fileName, setFileName] = useState(project.name)
   const [pixelFormat, setPixelFormat] = useState('GRAY8')
   const [blur, setBlur] = useState(false)
+  const [includeTextures, setIncludeTextures] = useState(false)
+  const [extended, setExtended] = useState(false)
 
   const handleOpen = useCallback(() => {
     setFontName(project.style.font.mainFamily)
@@ -69,12 +71,25 @@ const ButtonExport: FunctionComponent<ButtonExportProps> = (
   const handleSave = useCallback(() => {
     const config = list[val]
     const options =
-      config.supportsPixelFormat || config.supportsBlur
-        ? { pixelFormat, blur }
+      config.supportsPixelFormat ||
+      config.supportsBlur ||
+      config.supportsTextures ||
+      config.supportsExtended
+        ? { pixelFormat, blur, includeTextures, extended }
         : undefined
     exportFile(project, config, fontName, fileName, options)
     handleClose()
-  }, [blur, fileName, fontName, list, pixelFormat, project, val])
+  }, [
+    blur,
+    fileName,
+    fontName,
+    extended,
+    includeTextures,
+    list,
+    pixelFormat,
+    project,
+    val,
+  ])
 
   useEffect(() => {
     hotkeys.unbind('ctrl+shift+s,command+shift+s')
@@ -174,6 +189,60 @@ const ButtonExport: FunctionComponent<ButtonExportProps> = (
                     size='small'
                     checked={blur}
                     onChange={(e) => setBlur(e.target.checked)}
+                  />
+                  On
+                </Box>
+              </GridInput>
+            </Box>
+          ) : null}
+          {list[val]?.supportsTextures ? (
+            <Box sx={{ px: 2, my: 4 }}>
+              <GridInput
+                before='Include Textures:'
+                component='div'
+                childrenWidth={6}
+              >
+                <Box
+                  component='label'
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-start',
+                    gap: 1,
+                  }}
+                >
+                  Off
+                  <Switch
+                    size='small'
+                    checked={includeTextures}
+                    onChange={(e) => setIncludeTextures(e.target.checked)}
+                  />
+                  On
+                </Box>
+              </GridInput>
+            </Box>
+          ) : null}
+          {list[val]?.supportsExtended ? (
+            <Box sx={{ px: 2, my: 4 }}>
+              <GridInput
+                before='Extended Data Fields:'
+                component='div'
+                childrenWidth={6}
+              >
+                <Box
+                  component='label'
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-start',
+                    gap: 1,
+                  }}
+                >
+                  Off
+                  <Switch
+                    size='small'
+                    checked={extended}
+                    onChange={(e) => setExtended(e.target.checked)}
                   />
                   On
                 </Box>

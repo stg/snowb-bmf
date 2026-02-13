@@ -126,6 +126,7 @@ function buildGlyphData(
   bmfont: ExportContext['bmfont'],
   format: PixelFormat,
   applyBlur: boolean,
+  extended: boolean,
 ): { glyphs: GlyphData[]; baseLine: number } {
   const { packCanvases, layout } = project
   const pageImages: ImageData[] = []
@@ -140,21 +141,31 @@ function buildGlyphData(
 
   const glyphs: GlyphData[] = []
   const kernMap = new Map<number, { c: number; k: number }[]>()
-  const validChars = bmfont.chars.list.filter((char) => char.id <= 65535)
+  const validChars = extended
+    ? bmfont.chars.list
+    : bmfont.chars.list.filter((char) => char.id <= 65535)
   const validIds = new Set(validChars.map((char) => char.id))
 
   bmfont.kernings.list.forEach((kern) => {
-    if (
-      kern.first > 65535 ||
-      kern.second > 65535 ||
-      !validIds.has(kern.first)
-    ) {
+    if (!extended) {
+      if (
+        kern.first > 65535 ||
+        kern.second > 65535 ||
+        !validIds.has(kern.first)
+      ) {
+        return
+      }
+    } else if (!validIds.has(kern.first)) {
       return
     }
     const list = kernMap.get(kern.first) || []
     list.push({
       c: kern.second,
-      k: clampInt(Math.round(kern.amount), -128, 127),
+      k: clampInt(
+        Math.round(kern.amount),
+        extended ? -32768 : -128,
+        extended ? 32767 : 127,
+      ),
     })
     kernMap.set(kern.first, list)
   })
@@ -168,9 +179,21 @@ function buildGlyphData(
     const x0 = Math.max(0, Math.round(char.x))
     const y0 = Math.max(0, Math.round(char.y))
 
-    const xOffset = clampInt(Math.round(char.xoffset), -128, 127)
-    const yOffset = clampInt(Math.round(char.yoffset), -128, 127)
-    const xAdvance = clampInt(Math.round(char.xadvance), 0, 255)
+    const xOffset = clampInt(
+      Math.round(char.xoffset),
+      extended ? -32768 : -128,
+      extended ? 32767 : 127,
+    )
+    const yOffset = clampInt(
+      Math.round(char.yoffset),
+      extended ? -32768 : -128,
+      extended ? 32767 : 127,
+    )
+    const xAdvance = clampInt(
+      Math.round(char.xadvance),
+      0,
+      extended ? 65535 : 255,
+    )
 
     if (!pageImage || w0 === 0 || h0 === 0) {
       glyphs.push({
@@ -288,10 +311,18 @@ function buildGlyphData(
 
     glyphs.push({
       id,
-      w: clampInt(w, 0, 255),
-      h: clampInt(h, 0, 255),
-      x: clampInt(xOffset + minX, -128, 127),
-      y: clampInt(yOffset + minY, -128, 127),
+      w: clampInt(w, 0, extended ? 65535 : 255),
+      h: clampInt(h, 0, extended ? 65535 : 255),
+      x: clampInt(
+        xOffset + minX,
+        extended ? -32768 : -128,
+        extended ? 32767 : 127,
+      ),
+      y: clampInt(
+        yOffset + minY,
+        extended ? -32768 : -128,
+        extended ? 32767 : 127,
+      ),
       a: xAdvance,
       page: pageIndex,
       data,
@@ -325,6 +356,8 @@ function buildCFiles(context: ExportContext): ExportFilesResult {
   const format: PixelFormat = FORMAT_BPP[requested] ? requested : 'GRAY8'
   const bpp = FORMAT_BPP[format]
   const applyBlur = options?.blur !== false
+  const includeTextures = options?.includeTextures === true
+  const extended = options?.extended === true
   const name = safeIdentifier(fileName)
 
   const { glyphs, baseLine } = buildGlyphData(
@@ -332,6 +365,7 @@ function buildCFiles(context: ExportContext): ExportFilesResult {
     bmfont,
     format,
     applyBlur,
+    extended,
   )
 
   const dataOffsets: number[] = new Array(glyphs.length).fill(0)
@@ -417,9 +451,23 @@ function buildCFiles(context: ExportContext): ExportFilesResult {
   glyphs.forEach((g, idx) => {
     const offset = g.kern.length ? kernOffset[idx] : 0
     glyphLines.push(
-      `\t{ ${g.id}, ${g.x}, ${g.y}, ${g.a}, ${g.kern.length}, ${offset} }`,
+      includeTextures
+        ? `\t{ ${g.id}, ${g.x}, ${g.y}, ${g.a}, ${g.kern.length}, ${offset} }`
+        : `\t{ ${g.id}, ${g.x}, ${g.y}, ${g.a}, ${g.kern.length}, ${offset}, ${g.w}, ${g.h}, &${name}_data[${dataOffsets[idx]}] }`,
     )
   })
+
+  const fontLines = [
+    `const font_t ${name}_font = {`,
+    `\t${baseLine},`,
+    `\t${glyphs.length},`,
+    `\t${bpp},`,
+    ...(includeTextures ? [`\t${name}_texture,`] : []),
+    `\t${name}_kern,`,
+    `\t${name}_glyph,`,
+    '};',
+    '',
+  ]
 
   const cContent = [
     `#include "${fileName}.h"`,
@@ -428,10 +476,14 @@ function buildCFiles(context: ExportContext): ExportFilesResult {
     combinedData.length ? bytesToCArray(combinedData) : '',
     '};',
     '',
-    `static const texture_t ${name}_texture[${glyphs.length}] = {`,
-    textureLines.join(',\n'),
-    '};',
-    '',
+    ...(includeTextures
+      ? [
+          `static const texture_t ${name}_texture[${glyphs.length}] = {`,
+          textureLines.join(',\n'),
+          '};',
+          '',
+        ]
+      : []),
     `static const kern_t ${name}_kern[${kernTotal}] = {`,
     kernLines.join(',\n'),
     '};',
@@ -440,15 +492,7 @@ function buildCFiles(context: ExportContext): ExportFilesResult {
     glyphLines.join(',\n'),
     '};',
     '',
-    `const font_t ${name}_font = {`,
-    `\t${baseLine},`,
-    `\t${glyphs.length},`,
-    `\t${bpp},`,
-    `\t${name}_texture,`,
-    `\t${name}_kern,`,
-    `\t${name}_glyph,`,
-    '};',
-    '',
+    ...fontLines,
   ].join('\n')
 
   const structsContent = [
@@ -456,32 +500,42 @@ function buildCFiles(context: ExportContext): ExportFilesResult {
     '',
     '// Glyph descriptor',
     'typedef struct {',
-    '\tuint16_t cp;       // code-point (UCS-2)',
-    '\tint8_t x, y;       // draw offset',
-    '\tuint8_t advance;  // advance',
-    '\tuint8_t kern_n;   // kerning pairs',
-    '\tuint16_t kern_idx; // kerning data index',
+    `\tuint${extended ? 32 : 16}_t cp;         // code-point`,
+    `\tint${extended ? 16 : 8}_t x, y;         // draw offset`,
+    `\tuint${extended ? 16 : 8}_t advance;     // advance`,
+    `\tuint${extended ? 16 : 8}_t kern_n;      // kerning pairs`,
+    '\tuint16_t kern_idx;   // kerning data index',
+    ...(includeTextures
+      ? []
+      : [
+          `\tuint${extended ? 16 : 8}_t w, h;        // size`,
+          '\tconst uint8_t *data; // data pointer',
+        ]),
     '} glyph_t;',
     '',
     'typedef struct {',
-    '\tuint16_t cp; // code-point (UCS-2)',
-    '\tint8_t k;    // kerning',
+    `\tuint${extended ? 32 : 16}_t cp; // code-point`,
+    `\tint${extended ? 16 : 8}_t k;    // kerning`,
     '} kern_t;',
     '',
-    '// Texture descriptor',
-    'typedef struct {',
-    '\tuint16_t w; // width',
-    '\tuint16_t h; // height',
-    '\tint32_t x;  // origo x Q16.16',
-    '\tint32_t y;  // origo y Q16.16',
-    '\tuint8_t *data;',
-    '} texture_t;',
-    '',
+    ...(includeTextures
+      ? [
+          '// Texture descriptor',
+          'typedef struct {',
+          '\tuint16_t w; // width',
+          '\tuint16_t h; // height',
+          '\tint32_t x;  // origo x Q16.16',
+          '\tint32_t y;  // origo y Q16.16',
+          '\tuint8_t *data;',
+          '} texture_t;',
+          '',
+        ]
+      : []),
     'typedef struct {',
     '\tuint16_t baseline;',
     '\tuint16_t glyph_count;',
     '\tuint16_t bpp;',
-    '\tconst texture_t *texture;',
+    ...(includeTextures ? ['\tconst texture_t *texture;'] : []),
     '\tconst kern_t *kern;',
     '\tconst glyph_t *glyph;',
     '} font_t;',
@@ -519,6 +573,8 @@ const outputConfig: Output = {
   includePng: false,
   supportsPixelFormat: true,
   supportsBlur: true,
+  supportsTextures: true,
+  supportsExtended: true,
 }
 
 export default outputConfig
